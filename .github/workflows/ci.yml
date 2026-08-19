@@ -1,0 +1,76 @@
+name: OSS Agile Lab CI/CD
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate shell scripts
+        run: |
+          echo "Validating all .sh files for syntax errors..."
+          find . -name "*.sh" -print0 | while IFS= read -r -d '' file; do
+            echo "Checking $file"
+            bash -n "$file"
+          done
+
+  notify-success:
+    needs: validate
+    if: success()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment on tracking issue (success)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment 1 --repo ${{ github.repository }} \
+            --body "✅ CI/CD validation passed for commit ${{ github.sha }} on $(date)."
+
+  notify-failure:
+    needs: validate
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment on tracking issue (failure)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment 1 --repo ${{ github.repository }} \
+            --body "❌ CI/CD validation FAILED for commit ${{ github.sha }} on $(date). Check the Actions log for details."
+
+  generate-report:
+    needs: validate
+    if: success()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -U google-genai python-dotenv
+
+      - name: Generate prompt-based report
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python exp_4_cicd/generate_report.py
+
+      - name: Upload report as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: latest-report
+          path: exp_4_cicd/latest_report.md
+
+      - name: Post report to tracking issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment 1 --repo ${{ github.repository }} --body-file exp_4_cicd/latest_report.md
