@@ -20,7 +20,7 @@ if not API_KEY:
 
 LOG_FILE = "exp_1_scheduling/system_monitor.log"
 REPORT_FILE = "exp_4_cicd/latest_report.md"
-MAX_LOG_CHARS = 4000  # keep the prompt small and within free-tier limits
+MAX_LOG_CHARS = 1500  # keep the prompt small and within free-tier limits
 
 
 def read_recent_log(path, max_chars=MAX_LOG_CHARS):
@@ -46,16 +46,27 @@ def main():
         f"Log content:\n{log_content}"
     )
 
-    try:
-        interaction = client.interactions.create(
-            model="gemini-flash-latest",
-            input=prompt,
-        )
-    except Exception as e:
-        print(f"ERROR: Gemini API call failed: {e}", file=sys.stderr)
-        sys.exit(1)
+    # Try models in order of quota abundance; fall back gracefully.
+    MODELS = ["gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemma-4-31b-it"]
+    report_text = None
 
-    report_text = interaction.output_text
+    for model in MODELS:
+        try:
+            print(f"Trying {model}...", file=sys.stderr)
+            interaction = client.interactions.create(model=model, input=prompt)
+            report_text = interaction.output_text
+            print(f"Success with {model}.", file=sys.stderr)
+            break
+        except Exception as e:
+            print(f"  {model} unavailable: {str(e)[:160]}", file=sys.stderr)
+
+    if report_text is None:
+        report_text = (
+            "### Summary\n\nAutomated AI analysis was unavailable for this run "
+            "(all configured models exhausted their free-tier quota).\n\n"
+            "### Issues Detected\n\n* Report generation skipped; see the raw "
+            "monitoring log for current system state."
+        )
 
     os.makedirs(os.path.dirname(REPORT_FILE), exist_ok=True)
     with open(REPORT_FILE, "w") as f:

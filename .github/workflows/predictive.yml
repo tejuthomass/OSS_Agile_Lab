@@ -33,15 +33,15 @@ jobs:
           else
             echo "breached=true" >> $GITHUB_OUTPUT
           fi
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
+          cache-dependency-path: 'exp_5_miniproject/requirements.txt'
 
       - name: Install dependencies
-        run: pip install -U google-genai python-dotenv
+        run: pip install -r exp_5_miniproject/requirements.txt
 
       - name: Run predictive analysis
         env:
