@@ -8,3 +8,13 @@ Mem:           943Mi       353Mi       240Mi       1.1Mi       430Mi       590Mi
 Swap:             0B          0B          0B
 ---------------------------------
 
+--- System Status: Wed Aug 26 11:00:01 IST 2026 ---
+Disk Usage: 
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/sda1       3.9G  3.2G  615M  85% /
+Memory Usage: 
+               total        used        free      shared  buff/cache   available
+Mem:           943Mi       353Mi       237Mi       1.1Mi       432Mi       589Mi
+Swap:             0B          0B          0B
+---------------------------------
+
