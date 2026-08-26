@@ -1,17 +1,29 @@
 name: Predictive Maintenance Pipeline
 
 on:
+  # Scheduled daily analysis - predictable, budgeted API usage.
+  schedule:
+    - cron: '30 2 * * *'   # 02:30 UTC = 08:00 IST daily
+  # Manual trigger for demos and testing.
+  workflow_dispatch:
+  # Only on changes to the mini-project itself, never on unrelated commits.
   push:
     branches: [ main ]
-  workflow_dispatch:
+    paths:
+      - 'exp_5_miniproject/**'
+      - '.github/workflows/predictive.yml'
+
+# Cancel an in-flight run if a newer one starts, so rapid pushes
+# don't stack up and consume multiple API requests.
+concurrency:
+  group: predictive-maintenance
+  cancel-in-progress: true
 
 jobs:
-  threshold-check:
+  predictive-maintenance:
     runs-on: ubuntu-latest
-    outputs:
-      breached: ${{ steps.check.outputs.breached }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Run rule-based threshold check
         id: check
@@ -22,16 +34,11 @@ jobs:
             echo "breached=true" >> $GITHUB_OUTPUT
           fi
 
-  predict:
-    needs: threshold-check
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: pip install -U google-genai python-dotenv
@@ -52,15 +59,29 @@ jobs:
       - name: Create Agile issue if risk is high
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BREACHED: ${{ steps.check.outputs.breached }}
         run: |
           RISK=$(python -c "import json;print(json.load(open('exp_5_miniproject/verdict.json'))['risk_level'])")
-          echo "Detected risk level: $RISK"
-          if [ "$RISK" = "high" ]; then
+          SOURCE=$(python -c "import json;print(json.load(open('exp_5_miniproject/verdict.json'))['source'])")
+          echo "Risk: $RISK | Source: $SOURCE | Threshold breached: $BREACHED"
+
+          if [ "$RISK" != "high" ]; then
+            echo "Risk is $RISK - no issue created."
+            exit 0
+          fi
+
+          # Avoid duplicate issues if one is already open for this condition.
+          EXISTING=$(gh issue list --repo ${{ github.repository }} \
+            --state open --label automation \
+            --search "Predicted resource exhaustion risk in:title" \
+            --json number --jq 'length')
+
+          if [ "$EXISTING" -gt 0 ]; then
+            echo "An open risk issue already exists - skipping creation."
+          else
             gh issue create --repo ${{ github.repository }} \
               --title "Predicted resource exhaustion risk ($(date +%Y-%m-%d))" \
               --label "automation" \
               --body-file exp_5_miniproject/prediction_report.md
             echo "High-risk issue created on the Agile board."
-          else
-            echo "Risk is $RISK - no issue created."
           fi
