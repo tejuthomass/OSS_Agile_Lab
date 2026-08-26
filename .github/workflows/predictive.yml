@@ -1,0 +1,66 @@
+name: Predictive Maintenance Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  threshold-check:
+    runs-on: ubuntu-latest
+    outputs:
+      breached: ${{ steps.check.outputs.breached }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run rule-based threshold check
+        id: check
+        run: |
+          if bash exp_5_miniproject/check_thresholds.sh; then
+            echo "breached=false" >> $GITHUB_OUTPUT
+          else
+            echo "breached=true" >> $GITHUB_OUTPUT
+          fi
+
+  predict:
+    needs: threshold-check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -U google-genai python-dotenv
+
+      - name: Run predictive analysis
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python exp_5_miniproject/predict_maintenance.py
+
+      - name: Upload prediction report
+        uses: actions/upload-artifact@v4
+        with:
+          name: prediction-report
+          path: |
+            exp_5_miniproject/prediction_report.md
+            exp_5_miniproject/verdict.json
+
+      - name: Create Agile issue if risk is high
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          RISK=$(python -c "import json;print(json.load(open('exp_5_miniproject/verdict.json'))['risk_level'])")
+          echo "Detected risk level: $RISK"
+          if [ "$RISK" = "high" ]; then
+            gh issue create --repo ${{ github.repository }} \
+              --title "Predicted resource exhaustion risk ($(date +%Y-%m-%d))" \
+              --label "automation" \
+              --body-file exp_5_miniproject/prediction_report.md
+            echo "High-risk issue created on the Agile board."
+          else
+            echo "Risk is $RISK - no issue created."
+          fi
